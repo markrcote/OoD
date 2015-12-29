@@ -3,20 +3,24 @@ from django.contrib.auth.decorators import login_required, permission_required
 from django.core.urlresolvers import reverse
 from django.shortcuts import redirect, render
 
-from ood.models import ServerState
+from ood.models import OodInstance
 from ood.tasks import start as start_server
 from ood.tasks import stop as stop_server
 
 
 @login_required
 def main(request):
-    if request.user.is_authenticated and request.user.has_perm('ood.can_start'):
-        server_state = ServerState.objects.get(id=1)
-    else:
-        server_state = None
+    can_start = request.user.has_perm('ood.can_start')
     can_stop = request.user.has_perm('ood.can_stop')
+
+    if request.user.is_authenticated and can_start:
+        instances = OodInstance.objects.all()
+    else:
+        instances = []
+
     return render(request, 'main.html', {
-        'server_state': server_state,
+        'instances': instances,
+        'can_start': can_start,
         'can_stop': can_stop,
     })
 
@@ -32,39 +36,39 @@ def logout(request):
 
 @login_required
 @permission_required('ood.can_start')
-def wakeup(request):
-    start_server.delay()
-    return redirect('processing_start')
+def wakeup(request, instance_id):
+    start_server.delay(int(instance_id))
+    return redirect(reverse('processing_start', args=(instance_id,)))
 
 
 @login_required
 @permission_required('ood.can_stop')
-def shutdown(request):
-    stop_server.delay()
-    return redirect('processing_stop')
+def shutdown(request, instance_id):
+    stop_server.delay(int(instance_id))
+    return redirect(reverse('processing_stop', args=(instance_id,)))
 
 
 # TODO: There should be just one processing_command view that takes a
 # parameter in the path.
 @login_required
-def processing_start(request):
-    server_state = ServerState.objects.get(id=1)
-    if server_state.state == 'archived':
+def processing_start(request, instance_id):
+    instance = OodInstance.objects.get(pk=int(instance_id))
+    if instance.state == 'archived':
         return render(request, 'processing_command.html', {
-            'processing_url': reverse('processing_start'),
+            'processing_url': reverse('processing_start', args=(instance_id,)),
             'command': 'start',
         })
     else:
-        return redirect('main')
+        return redirect(reverse('main'))
 
 
 @login_required
-def processing_stop(request):
-    server_state = ServerState.objects.get(id=1)
-    if server_state.state == 'running':
+def processing_stop(request, instance_id):
+    instance = OodInstance.objects.get(pk=int(instance_id))
+    if instance.state == 'running':
         return render(request, 'processing_command.html', {
-            'processing_url': reverse('processing_stop'),
+            'processing_url': reverse('processing_stop', args=(instance_id,)),
             'command': 'stop',
         })
     else:
-        return redirect('main')
+        return redirect(reverse('main'))
